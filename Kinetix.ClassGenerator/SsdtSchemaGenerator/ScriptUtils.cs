@@ -27,7 +27,7 @@ namespace Kinetix.ClassGenerator.SsdtSchemaGenerator
 
             var persistentType = persistenceData.PersistentDataType;
 
-            if (property.DataDescription.IsPrimaryKey && property.DataDescription.Domain.Code == "DO_ID")
+            if (property.DataDescription.IsPrimaryKey && (property.DataDescription.Domain.Code == "DO_ID" || property.DataDescription.Domain.Code == "DO_UNSAFE_ID"))
             {
                 persistentType += " identity";
             }
