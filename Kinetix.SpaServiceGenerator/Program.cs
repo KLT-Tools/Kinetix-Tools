@@ -1,17 +1,19 @@
-﻿using Kinetix.SpaServiceGenerator.Model;
-using Kinetix.Tools.Common;
-using Microsoft.Build.Locator;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.MSBuild;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Kinetix.SpaServiceGenerator.Model;
+using Kinetix.Tools.Common;
+using Kinetix.Tools.Common.Parameters;
+using Microsoft.Build.Locator;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.MSBuild;
+using Newtonsoft.Json;
 
 namespace Kinetix.SpaServiceGenerator
 {
@@ -20,38 +22,52 @@ namespace Kinetix.SpaServiceGenerator
     /// </summary>
     internal class Program
     {
-        private static string _solutionPath;
-        private static string _serviceRoot;
-        private static string _projectName;
-        private static string _kinetix;
+        public static ServiceParameters Parameters { get; set; }
 
         /// <summary>
         /// Point d'entrée.
         /// </summary>
-        /// <param name="args">
-        /// Premier argument : chemin de la solution.
-        /// Deuxième argument : racine de la SPA.
-        /// Troisième argument : namespace du projet (exemple : "Kinetix").
-        /// </param>
+        /// <param name="args">Le fichier de config.</param>
         public static async Task Main(string[] args)
         {
-            _solutionPath = args[0];
-            _serviceRoot = args[1];
-            _projectName = args[2];
-            _kinetix = args[3];
+            // Lecture des paramètres d'entrée.
+            var configPath = args[0];
+            if (!File.Exists(configPath))
+            {
+                throw new FileNotFoundException("Le fichier de configuration n'existe pas");
+            }
 
+            var configText = File.ReadAllText(configPath);
+            Parameters = JsonConvert.DeserializeObject<ServiceParameters>(configText);
+
+            if (Parameters.SolutionPath == null)
+            {
+                throw new ArgumentNullException(nameof(ServiceParameters.SolutionPath));
+            }
+
+            if (Parameters.RootNamespace == null)
+            {
+                throw new ArgumentNullException(nameof(ServiceParameters.RootNamespace));
+            }
+
+            if (Parameters.OutputDirectory == null)
+            {
+                throw new ArgumentNullException(nameof(ServiceParameters.OutputDirectory));
+            }
+
+            Parameters.ModelRoot = Parameters.ModelRoot ?? "model";
+            Parameters.FetchPath = Parameters.FetchPath ?? "services/server";
+            Parameters.SplitIntoApps = Parameters.SplitIntoApps ?? false;
+            Parameters.Kinetix = Parameters.Kinetix?.ToLower() ?? "core";
             var instance = MSBuildLocator.QueryVisualStudioInstances().First();
             Console.WriteLine($"Using MSBuild at '{instance.MSBuildPath}' to load projects.");
             MSBuildLocator.RegisterInstance(instance);
             var msWorkspace = MSBuildWorkspace.Create();
 
             msWorkspace.WorkspaceFailed += MsWorkspace_WorkspaceFailed;
-            Solution solution = await msWorkspace.OpenSolutionAsync(_solutionPath);
+            var solution = await msWorkspace.OpenSolutionAsync(Parameters.SolutionPath);
 
-            // If path is not to services add "standard" path 
-            var outputPath = _serviceRoot.EndsWith("services") ? _serviceRoot : $"{_serviceRoot}/app/services";
-
-            var frontEnds = solution.Projects.Where(projet => projet.AssemblyName.StartsWith(_projectName) && projet.AssemblyName.EndsWith("FrontEnd"));
+            var frontEnds = solution.Projects.Where(projet => projet.AssemblyName.StartsWith(Parameters.RootNamespace) && projet.AssemblyName.EndsWith("FrontEnd"));
             var controllers = frontEnds.SelectMany(f => f.Documents).Where(document =>
                 document.Name.Contains("Controller")
                 && !document.Folders.Contains("Transverse"));
@@ -64,25 +80,29 @@ namespace Kinetix.SpaServiceGenerator
                 var modelClass = model.GetDeclaredSymbol(controllerClass);
 
                 // Skip if we extend a MVC controller
-                if (_kinetix == "framework" && modelClass.BaseType.Name == "Controller")
+                if (Parameters.Kinetix == "framework" && modelClass.BaseType.Name == "Controller")
                 {
                     continue;
                 }
 
-                IReadOnlyList<string> folders = controller.Folders;
+                var folders = controller.Folders;
 
-                var firstFolder = frontEnds.Count() > 1 ? $"/{controller.Project.Name.Split('.')[1].ToDashCase()}" : string.Empty;
-                var secondFolder = folders.Count > 1 ? $"/{string.Join("/", folders.Skip(1).Select(f => f.ToDashCase()))}" : string.Empty;
+                var frontEndName = frontEnds.Count() > 1 ? $"/{controller.Project.Name.Split('.')[1].ToDashCase()}" : string.Empty;
+                var folderNames = folders.Count > 1 ? $"{string.Join("/", folders.Skip(1).Select(f => f.ToDashCase()))}/" : string.Empty;
                 var folderCount = (frontEnds.Count() > 1 ? 1 : 0) + folders.Count - 1;
 
-                var controllerName = $"{firstFolder}{secondFolder}/{controllerClass.Identifier.ToString().Replace("Controller", string.Empty).ToDashCase()}.ts".Substring(1);
+                var controllerName = $"{folderNames}{controllerClass.Identifier.ToString().Replace("Controller", string.Empty).ToDashCase()}.ts";
 
-                Console.WriteLine($"Generating {controllerName}");
+                var fileName = Parameters.SplitIntoApps == true
+                    ? $"{Parameters.OutputDirectory}{frontEndName}/services/{controllerName}"
+                    : $"{Parameters.OutputDirectory}/services{frontEndName}/{controllerName}";
+
+                Console.WriteLine($"Generating {fileName}");
 
                 var methods = GetMethodDeclarations(controllerClass, model);
 
                 // If controller is not a direct Controller extender, ie it extends a base class
-                string aspControllerClass = _kinetix == "Core" ? "Controller" : "ApiController";
+                var aspControllerClass = Parameters.Kinetix == "framework" ? "ApiController" : "Controller";
                 if (modelClass.BaseType.Name != aspControllerClass)
                 {
                     var baseClassSyntaxTree = modelClass.BaseType.DeclaringSyntaxReferences.First().SyntaxTree;
@@ -97,7 +117,6 @@ namespace Kinetix.SpaServiceGenerator
                     .Where(s => s != null)
                     .ToList();
 
-                var fileName = $"{outputPath}/{controllerName}";
                 var fileInfo = new FileInfo(fileName);
 
                 var directoryInfo = fileInfo.Directory;
@@ -106,7 +125,14 @@ namespace Kinetix.SpaServiceGenerator
                     Directory.CreateDirectory(directoryInfo.FullName);
                 }
 
-                var template = new ServiceSpa { ProjectName = _projectName, FolderCount = folderCount, Services = serviceList };
+                var template = new ServiceSpa
+                {
+                    ProjectName = Parameters.RootNamespace,
+                    ModelRoot = Parameters.ModelRoot,
+                    FetchPath = Parameters.FetchPath,
+                    FolderCount = folderCount,
+                    Services = serviceList
+                };
                 var output = template.TransformText();
                 File.WriteAllText(fileName, output, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             }
@@ -122,8 +148,15 @@ namespace Kinetix.SpaServiceGenerator
             Console.WriteLine(e.Diagnostic.Message);
         }
 
-        private static ClassDeclarationSyntax GetClassDeclaration(SyntaxTree syntaxTree) => syntaxTree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>().First();
-        private static IEnumerable<(MethodDeclarationSyntax method, SemanticModel model)> GetMethodDeclarations(ClassDeclarationSyntax controllerClass, SemanticModel model) => controllerClass.ChildNodes().OfType<MethodDeclarationSyntax>().Select(method => (method, model));
+        private static ClassDeclarationSyntax GetClassDeclaration(SyntaxTree syntaxTree)
+        {
+            return syntaxTree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>().First();
+        }
+
+        private static IEnumerable<(MethodDeclarationSyntax method, SemanticModel model)> GetMethodDeclarations(ClassDeclarationSyntax controllerClass, SemanticModel model)
+        {
+            return controllerClass.ChildNodes().OfType<MethodDeclarationSyntax>().Select(method => (method, model));
+        }
 
         private static ServiceDeclaration GetService((MethodDeclarationSyntax method, SemanticModel model) m)
         {
@@ -171,7 +204,7 @@ namespace Kinetix.SpaServiceGenerator
             var routeParameters = new List<string>();
 
             string route;
-            if (_kinetix == "Core")
+            if (Parameters.Kinetix != "framework")
             {
                 route = ((verbRouteAttribute.ArgumentList.ChildNodes().First() as AttributeArgumentSyntax)
                         .Expression as LiteralExpressionSyntax)
