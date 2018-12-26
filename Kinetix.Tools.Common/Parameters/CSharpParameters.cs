@@ -44,5 +44,10 @@
         /// Définit si les interfaces IEntity sont ajoutée à la génération.
         /// </summary>
         public bool IsWithEntityInterface { get; set; } = false;
+
+        /// <summary>
+        /// Définit si les context a des constructors par défaut.
+        /// </summary>
+        public bool HasContextDefaultConstructors { get; set; } = true;
     }
 }

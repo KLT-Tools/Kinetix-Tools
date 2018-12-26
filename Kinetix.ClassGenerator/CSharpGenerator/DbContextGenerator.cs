@@ -103,19 +103,22 @@ namespace Kinetix.ClassGenerator.CSharpGenerator
                     w.WriteLine(1, $"public partial class {dbContextName}{inheritance}");
                     w.WriteLine(1, "{");
 
-                    w.WriteSummary(2, "Constructeur par défaut.");
-                    w.WriteLine(2, $"public {dbContextName}()");
-                    w.WriteLine(3, ": base(SqlServerManager.Instance.ObtainConnection(\"default\"), false)");
-                    w.WriteLine(2, "{");
-                    w.WriteLine(2, "}");
+                    if (_parameters.HasContextDefaultConstructors)
+                    {
+                        w.WriteSummary(2, "Constructeur par défaut.");
+                        w.WriteLine(2, $"public {dbContextName}()");
+                        w.WriteLine(3, ": base(SqlServerManager.Instance.ObtainConnection(\"default\"), false)");
+                        w.WriteLine(2, "{");
+                        w.WriteLine(2, "}");
 
-                    w.WriteLine();
-                    w.WriteSummary(2, "Constructeur par défaut.");
-                    w.WriteParam("scope", "Transaction scope.");
-                    w.WriteLine(2, $"public {dbContextName}(TransactionScope scope)");
-                    w.WriteLine(3, ": this()");
-                    w.WriteLine(2, "{");
-                    w.WriteLine(2, "}");
+                        w.WriteLine();
+                        w.WriteSummary(2, "Constructeur par défaut.");
+                        w.WriteParam("scope", "Transaction scope.");
+                        w.WriteLine(2, $"public {dbContextName}(TransactionScope scope)");
+                        w.WriteLine(3, ": this()");
+                        w.WriteLine(2, "{");
+                        w.WriteLine(2, "}");
+                    }
                 }
 
                 foreach (ModelRoot model in modelRootList)
