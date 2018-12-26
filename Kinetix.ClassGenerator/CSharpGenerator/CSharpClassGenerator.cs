@@ -1,9 +1,9 @@
-﻿using Kinetix.Tools.Common.Model;
-using Kinetix.Tools.Common.Parameters;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Kinetix.Tools.Common.Model;
+using Kinetix.Tools.Common.Parameters;
 
 namespace Kinetix.ClassGenerator.CSharpGenerator
 {
@@ -97,14 +97,16 @@ namespace Kinetix.ClassGenerator.CSharpGenerator
             {
                 if (item.HasPrimaryKey && item.PrimaryKey.Count == 1)
                 {
-                    switch (item.PrimaryKey.First().Name)
+                    string name = item.PrimaryKey.First().Name;
+                    string type = item.PrimaryKey.First().DataType;
+
+                    if (name == "Id" && type == "int?")
                     {
-                        case "Id":
-                            interfaces.Add("IIdEntity");
-                            break;
-                        case "Code":
-                            interfaces.Add("ICodeEntity");
-                            break;
+                        interfaces.Add("IIdEntity");
+                    }
+                    else if (name == "Code" && type == "string")
+                    {
+                        interfaces.Add("ICodeEntity");
                     }
                 }
 
