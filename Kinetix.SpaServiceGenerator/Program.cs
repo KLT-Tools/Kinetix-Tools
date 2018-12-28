@@ -1,17 +1,17 @@
-﻿using Kinetix.SpaServiceGenerator.Model;
-using Kinetix.Tools.Common;
-using Microsoft.Build.Locator;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.MSBuild;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Kinetix.SpaServiceGenerator.Model;
+using Kinetix.Tools.Common;
+using Microsoft.Build.Locator;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.MSBuild;
 
 namespace Kinetix.SpaServiceGenerator
 {
@@ -40,7 +40,8 @@ namespace Kinetix.SpaServiceGenerator
             _projectName = args[2];
             _kinetix = args[3];
 
-            var instance = MSBuildLocator.QueryVisualStudioInstances().First();
+            // We avoid taking a SSIS instances by removing ones with SQL in path
+            var instance = MSBuildLocator.QueryVisualStudioInstances().First(inst => !inst.MSBuildPath.Contains("SQL"));
             Console.WriteLine($"Using MSBuild at '{instance.MSBuildPath}' to load projects.");
             MSBuildLocator.RegisterInstance(instance);
             var msWorkspace = MSBuildWorkspace.Create();
